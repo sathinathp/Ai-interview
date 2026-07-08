@@ -33,12 +33,12 @@ const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:3000',
   process.env.FRONTEND_URL
-].filter(Boolean);
+].map(url => url ? url.replace(/\/$/, '') : '').filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, Postman in dev)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('vercel.app')) {
       callback(null, true);
     } else {
       callback(new Error(`CORS policy: origin ${origin} is not allowed.`));
