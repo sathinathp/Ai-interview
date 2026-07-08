@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/react.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NexaHire AI — Biometric Proctoring & Automated 1st-Phase Screening</title>
+    <meta name="description" content="Next-generation HR recruitment screening platform utilizing real-time webcam proctoring, Speech-to-Text transcription, and automated AI competency scorecards." />
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        const errorData = {
+          message: message,
+          source: source,
+          lineno: lineno,
+          colno: colno,
+          stack: error ? error.stack : ''
+        };
+        fetch('http://localhost:5000/api/log-error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorData)
+        }).catch(err => {});
+      };
+      window.onunhandledrejection = function(event) {
+        const errorData = {
+          message: event.reason ? event.reason.message : 'Unhandled Promise Rejection',
+          stack: event.reason ? event.reason.stack : ''
+        };
+        fetch('http://localhost:5000/api/log-error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorData)
+        }).catch(err => {});
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
