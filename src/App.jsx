@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import softstandardIcon from './assets/logo_softstandard_icon.png';
+import bluebixIcon from './assets/logo_bluebix_icon.png';
+import petabytzIcon from './assets/logo_petabytz_icon.png';
 import { 
   Users, UserPlus, ClipboardList, Clock, ShieldAlert, CheckCircle2, 
   Video, Mic, MicOff, RefreshCw, Send, Copy, AlertTriangle, Eye, 
@@ -229,7 +232,12 @@ function AdvancedSecureLogo({ size = 'small' }) {
   // Configured logo option from the user-provided image.
   // Options: 'softstandard' (default), 'bluebix', 'petabytz'
   const logoType = 'softstandard';
-  const logoSrc = `/src/assets/logo_${logoType}_icon.png`;
+  const logoMap = {
+    softstandard: softstandardIcon,
+    bluebix: bluebixIcon,
+    petabytz: petabytzIcon
+  };
+  const logoSrc = logoMap[logoType] || softstandardIcon;
 
   const sizeMap = {
     mini: 'w-6 h-6',
