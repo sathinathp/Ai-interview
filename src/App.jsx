@@ -9,6 +9,15 @@ import {
 } from 'lucide-react';
 
 // IndexedDB helper for storing and retrieving recorded videos
+// Dynamic Backend Configuration
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:5000'
+  : 'https://ai-interview-9y9t.onrender.com';
+
+const WS_BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'ws://localhost:5000'
+  : 'wss://ai-interview-9y9t.onrender.com';
+
 const videoDb = {
   dbName: 'NexaHireVideoDb',
   storeName: 'videos',
@@ -284,7 +293,7 @@ export default function App() {
       }
       
       // Only intercept local API endpoints to avoid leaking token to external services
-      if (url.includes('http://localhost:5000/api') || url.includes('/api/')) {
+      if (url.includes(BACKEND_URL + '/api') || url.includes('/api/')) {
         const hToken = localStorage.getItem('hr_token');
         const cToken = localStorage.getItem('candidate_token');
         const token = hToken || cToken;
@@ -442,7 +451,7 @@ export default function App() {
         // If there's an interviewId, fetch public details first to populate candidate page
         if (intId) {
           try {
-            const pubRes = await fetch(`http://localhost:5000/api/interviews/${intId}/public`);
+            const pubRes = await fetch(`${BACKEND_URL}/api/interviews/${intId}/public`);
             if (pubRes.ok) {
               const data = await pubRes.json();
               const placeholder = {
@@ -470,7 +479,7 @@ export default function App() {
         // If candidate is already authenticated, load their detailed state securely
         if (intId && candidateToken) {
           try {
-            const fullRes = await fetch(`http://localhost:5000/api/interviews/${intId}`, {
+            const fullRes = await fetch(`${BACKEND_URL}/api/interviews/${intId}`, {
               headers: { 'Authorization': `Bearer ${candidateToken}` }
             });
             if (fullRes.ok) {
@@ -492,7 +501,7 @@ export default function App() {
         }
 
         if (hrToken) {
-          const res = await fetch('http://localhost:5000/api/interviews', { headers });
+          const res = await fetch(BACKEND_URL + '/api/interviews', { headers });
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data)) {
@@ -594,7 +603,7 @@ export default function App() {
   // Auth Handling
   const handleRegisterHR = async (email, password, registrationKey) => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/hr/register', {
+      const res = await fetch(BACKEND_URL + '/api/auth/hr/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, registrationKey })
@@ -617,7 +626,7 @@ export default function App() {
 
   const handleLoginHR = async (email, password) => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/hr/login', {
+      const res = await fetch(BACKEND_URL + '/api/auth/hr/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -686,7 +695,7 @@ export default function App() {
       if (hrToken) {
         headers['Authorization'] = `Bearer ${hrToken}`;
       }
-      const res = await fetch('http://localhost:5000/api/interviews', {
+      const res = await fetch(BACKEND_URL + '/api/interviews', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(newInterview)
@@ -709,7 +718,7 @@ export default function App() {
     }
 
     // Save update to PostgreSQL database
-    fetch(`http://localhost:5000/api/interviews/${updated.id}`, {
+    fetch(`${BACKEND_URL}/api/interviews/${updated.id}`, {
       method: 'PUT',
       headers: headers,
       body: JSON.stringify({
@@ -856,7 +865,7 @@ export default function App() {
               if (hrToken) {
                 headers['Authorization'] = `Bearer ${hrToken}`;
               }
-              fetch(`http://localhost:5000/api/interviews/${id}`, {
+              fetch(`${BACKEND_URL}/api/interviews/${id}`, {
                 method: 'DELETE',
                 headers
               }).catch(err => console.error('Failed to delete interview from PostgreSQL database:', err));
@@ -2084,7 +2093,7 @@ function HRAuthPage({ onLogin, onRegister }) {
 
       setIsValidating(true);
       try {
-        const res = await fetch('http://localhost:5000/api/auth/validate-key', {
+        const res = await fetch(BACKEND_URL + '/api/auth/validate-key', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ registrationKey: registrationKey.trim() })
@@ -2342,7 +2351,7 @@ function SystemSettings({ hrToken }) {
     if (hrToken) {
       headers['Authorization'] = `Bearer ${hrToken}`;
     }
-    fetch('http://localhost:5000/api/config/key-status', { headers })
+    fetch(BACKEND_URL + '/api/config/key-status', { headers })
       .then(res => res.json())
       .then(data => {
         setIsConfigured(data.isConfigured);
@@ -2356,7 +2365,7 @@ function SystemSettings({ hrToken }) {
     if (hrToken) {
       headers['Authorization'] = `Bearer ${hrToken}`;
     }
-    fetch('http://localhost:5000/api/auth/gmail/status', { headers })
+    fetch(BACKEND_URL + '/api/auth/gmail/status', { headers })
       .then(res => res.json())
       .then(data => {
         setGmailStatus(data);
@@ -2371,7 +2380,7 @@ function SystemSettings({ hrToken }) {
       if (hrToken) {
         headers['Authorization'] = `Bearer ${hrToken}`;
       }
-      const res = await fetch('http://localhost:5000/api/config/key', {
+      const res = await fetch(BACKEND_URL + '/api/config/key', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ apiKey: apiKey.trim() })
@@ -2403,7 +2412,7 @@ function SystemSettings({ hrToken }) {
       if (hrToken) {
         headers['Authorization'] = `Bearer ${hrToken}`;
       }
-      const res = await fetch('http://localhost:5000/api/auth/gmail/connect', {
+      const res = await fetch(BACKEND_URL + '/api/auth/gmail/connect', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -2433,7 +2442,7 @@ function SystemSettings({ hrToken }) {
       if (hrToken) {
         headers['Authorization'] = `Bearer ${hrToken}`;
       }
-      const res = await fetch('http://localhost:5000/api/auth/gmail/disconnect', {
+      const res = await fetch(BACKEND_URL + '/api/auth/gmail/disconnect', {
         method: 'POST',
         headers: headers
       });
@@ -2602,7 +2611,7 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
     if (hrToken) {
       headers['Authorization'] = `Bearer ${hrToken}`;
     }
-    fetch('http://localhost:5000/api/auth/gmail/status', { headers })
+    fetch(BACKEND_URL + '/api/auth/gmail/status', { headers })
       .then(res => res.json())
       .then(data => {
         setGmailStatus(data);
@@ -3767,7 +3776,7 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
 
       // Fall back to backend — fetch the WHOLE file as a blob to avoid
       // Chrome MEDIA_ERR_DECODE on MediaRecorder WebM files (no Cues index)
-      const blobEndpoint = `http://localhost:5000/api/interviews/${interview.id}/video/blob`;
+      const blobEndpoint = `${BACKEND_URL}/api/interviews/${interview.id}/video/blob`;
       setVideoLoadProgress(1); // show spinner immediately
       const headers = {};
       if (hrToken) {
@@ -4439,7 +4448,7 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <a 
-                href={`http://localhost:5000/api/interviews/${interview.id}/video/blob`} 
+                href={`${BACKEND_URL}/api/interviews/${interview.id}/video/blob`} 
                 download={`interview-${interview.id}.webm`}
                 style={{ fontSize: isCustomMaximized ? '11px' : '9px', fontFamily: 'monospace', color: '#818cf8', textDecoration: 'underline', fontWeight: 'bold', cursor: 'pointer' }}
               >
@@ -4475,7 +4484,7 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
                   {videoError}
                 </div>
                 <a 
-                  href={`http://localhost:5000/api/interviews/${interview.id}/video/blob`} 
+                  href={`${BACKEND_URL}/api/interviews/${interview.id}/video/blob`} 
                   download={`interview-${interview.id}.webm`}
                   style={{ marginTop: '4px', fontSize: '9px', fontFamily: 'monospace', color: '#818cf8', textDecoration: 'underline', fontWeight: 'bold' }}
                 >
@@ -4514,7 +4523,7 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
                     if ((code === 3 || code === 2) && recordedVideoUrl && !recordedVideoUrl.startsWith('blob:')) {
                       setIsVideoLoading(true);
                       setVideoLoadProgress(1);
-                      const blobEndpoint = `http://localhost:5000/api/interviews/${interview.id}/video/blob`;
+                      const blobEndpoint = `${BACKEND_URL}/api/interviews/${interview.id}/video/blob`;
                       fetch(blobEndpoint)
                         .then(res => {
                           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -4808,7 +4817,7 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
                 return;
               }
               try {
-                const res = await fetch(`http://localhost:5000/api/interviews/${interview.id}`, {
+                const res = await fetch(`${BACKEND_URL}/api/interviews/${interview.id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -4904,7 +4913,7 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/candidate/login', {
+      const res = await fetch(BACKEND_URL + '/api/auth/candidate/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5468,7 +5477,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
       if (candidateToken) {
         headers['Authorization'] = `Bearer ${candidateToken}`;
       }
-      await fetch('http://localhost:5000/api/security/violation', {
+      await fetch(BACKEND_URL + '/api/security/violation', {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -5584,7 +5593,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
     if (candidateToken) {
       headers['Authorization'] = `Bearer ${candidateToken}`;
     }
-    fetch('http://localhost:5000/api/security/violation', {
+    fetch(BACKEND_URL + '/api/security/violation', {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -5950,7 +5959,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
             if (candidateToken) {
               uploadHeaders['Authorization'] = `Bearer ${candidateToken}`;
             }
-            const uploadPromise = fetch(`http://localhost:5000/api/interviews/${interview.id}/video`, {
+            const uploadPromise = fetch(`${BACKEND_URL}/api/interviews/${interview.id}/video`, {
               method: 'POST',
               headers: uploadHeaders,
               body: blob
@@ -6524,7 +6533,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      const ws = new WebSocket(`ws://localhost:5000/transcribe?id=${encodeURIComponent(interview.id)}&token=${encodeURIComponent(candidateToken)}`);
+      const ws = new WebSocket(`${WS_BACKEND_URL}/transcribe?id=${encodeURIComponent(interview.id)}&token=${encodeURIComponent(candidateToken)}`);
       ws.binaryType = 'arraybuffer';
       dgSocketRef.current = ws;
 
@@ -6810,7 +6819,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
       if (candidateToken) {
         keyHeaders['Authorization'] = `Bearer ${candidateToken}`;
       }
-      const keyStatusRes = await fetch('http://localhost:5000/api/config/key-status', { headers: keyHeaders });
+      const keyStatusRes = await fetch(BACKEND_URL + '/api/config/key-status', { headers: keyHeaders });
       const keyStatusData = await keyStatusRes.json();
       
       if (keyStatusData.isConfigured) {
@@ -6821,7 +6830,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
         if (candidateToken) {
           evalHeaders['Authorization'] = `Bearer ${candidateToken}`;
         }
-        const response = await fetch('http://localhost:5000/api/evaluate', {
+        const response = await fetch(BACKEND_URL + '/api/evaluate', {
           method: 'POST',
           headers: evalHeaders,
           body: JSON.stringify({

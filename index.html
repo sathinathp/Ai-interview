@@ -7,6 +7,10 @@
     <title>NexaHire AI — Biometric Proctoring & Automated 1st-Phase Screening</title>
     <meta name="description" content="Next-generation HR recruitment screening platform utilizing real-time webcam proctoring, Speech-to-Text transcription, and automated AI competency scorecards." />
     <script>
+      const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:5000'
+        : 'https://ai-interview-9y9t.onrender.com';
+
       window.onerror = function(message, source, lineno, colno, error) {
         const errorData = {
           message: message,
@@ -15,7 +19,7 @@
           colno: colno,
           stack: error ? error.stack : ''
         };
-        fetch('http://localhost:5000/api/log-error', {
+        fetch(`${BACKEND_URL}/api/log-error`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(errorData)
@@ -26,7 +30,7 @@
           message: event.reason ? event.reason.message : 'Unhandled Promise Rejection',
           stack: event.reason ? event.reason.stack : ''
         };
-        fetch('http://localhost:5000/api/log-error', {
+        fetch(`${BACKEND_URL}/api/log-error`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(errorData)
