@@ -7,14 +7,23 @@ types.setTypeParser(1114, function(stringValue) {
   return new Date(stringValue.replace(' ', 'T') + 'Z');
 });
 
-const dbConfig = {
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-};
+const dbConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    }
+  : {
+      user: process.env.DB_USER,
+      host: process.env.DB_HOST,
+      password: process.env.DB_PASSWORD,
+      port: process.env.DB_PORT,
+    };
 
 async function initializeDatabase() {
+  if (process.env.DATABASE_URL) {
+    console.log('Managed database connection detected via DATABASE_URL. Skipping dynamic database check.');
+    return;
+  }
   // Connect to default 'postgres' database to check/create target database if it doesn't exist
   const client = new Client({
     ...dbConfig,
@@ -43,10 +52,17 @@ async function initializeDatabase() {
   }
 }
 
-const pool = new Pool({
-  ...dbConfig,
-  database: process.env.DB_NAME,
-});
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+      }
+    : {
+        ...dbConfig,
+        database: process.env.DB_NAME,
+      }
+);
 
 module.exports = {
   pool,
