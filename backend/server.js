@@ -194,6 +194,9 @@ async function setupTables() {
     await client.query(`
       ALTER TABLE interviews ADD COLUMN IF NOT EXISTS video_data BYTEA;
     `);
+    await client.query(`
+      ALTER TABLE interviews ADD COLUMN IF NOT EXISTS start_at TIMESTAMP;
+    `);
 
     // 3. Security violations table — stores every cheat attempt with full reason + timestamp
     await client.query(`
@@ -315,7 +318,7 @@ app.post('/api/auth/candidate/login', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, candidate_email, passcode, status FROM interviews 
+      `SELECT id, candidate_email, passcode, status, start_at, expires_at FROM interviews 
        WHERE id = $1 OR LOWER(candidate_email) = LOWER($2)`,
       [cleanId, cleanId]
     );
@@ -337,6 +340,17 @@ app.post('/api/auth/candidate/login', async (req, res) => {
 
     if (interview.status === 'Completed' || interview.status === 'Terminated') {
       return res.status(400).json({ error: 'This interview session has already been completed or terminated.' });
+    }
+
+    const now = new Date();
+    if (interview.start_at && now < new Date(interview.start_at)) {
+      return res.status(400).json({ 
+        error: `This interview has not started yet. It is scheduled to start at: ${new Date(interview.start_at).toLocaleString()} (${new Date(interview.start_at).toUTCString()})` 
+      });
+    }
+
+    if (interview.expires_at && now > new Date(interview.expires_at)) {
+      return res.status(400).json({ error: 'This interview session has expired.' });
     }
 
     const token = jwt.sign(
@@ -847,6 +861,7 @@ app.get('/api/interviews', authenticateHR, async (req, res) => {
       status: row.status,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
+      startAt: row.start_at,
       durationLimit: row.duration_limit,
       passingScore: row.passing_score,
       passcode: row.passcode,
@@ -865,13 +880,14 @@ app.get('/api/interviews', authenticateHR, async (req, res) => {
 
 app.get('/api/interviews/:id/public', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, job_role, expires_at, status, candidate_name, candidate_email FROM interviews WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT id, job_role, expires_at, start_at, status, candidate_name, candidate_email FROM interviews WHERE id = $1', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Interview not found' });
     const row = result.rows[0];
     res.json({
       id: row.id,
       jobRole: row.job_role,
       expiresAt: row.expires_at,
+      startAt: row.start_at,
       status: row.status,
       candidateName: row.candidate_name,
       candidateEmail: row.candidate_email
@@ -899,6 +915,7 @@ app.get('/api/interviews/:id', authenticateCandidate, async (req, res) => {
       status: row.status,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
+      startAt: row.start_at,
       durationLimit: row.duration_limit,
       passingScore: row.passing_score,
       passcode: row.passcode,
@@ -916,7 +933,7 @@ app.get('/api/interviews/:id', authenticateCandidate, async (req, res) => {
 
 app.post('/api/interviews', authenticateHR, async (req, res) => {
   const { 
-    id, candidateName, candidateEmail, jobRole, status, createdAt, expiresAt, 
+    id, candidateName, candidateEmail, jobRole, status, createdAt, expiresAt, startAt,
     durationLimit, passingScore, passcode, phase1Questions, phase2Questions, 
     transcript, report, candidateType, invitationLink
   } = req.body;
@@ -924,12 +941,12 @@ app.post('/api/interviews', authenticateHR, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO interviews (
-        id, candidate_name, candidate_email, job_role, status, created_at, expires_at, 
+        id, candidate_name, candidate_email, job_role, status, created_at, expires_at, start_at,
         duration_limit, passing_score, passcode, phase1_questions, phase2_questions, transcript, report, candidate_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         id, sanitize(candidateName), sanitize(candidateEmail), sanitize(jobRole), 
-        status, createdAt, expiresAt, durationLimit, passingScore, passcode, 
+        status, createdAt, expiresAt, startAt, durationLimit, passingScore, passcode, 
         JSON.stringify(phase1Questions), JSON.stringify(phase2Questions), 
         JSON.stringify(transcript || []), JSON.stringify(report || null),
         candidateType || 'experienced'

@@ -664,10 +664,14 @@ export default function App() {
   };
 
   // Generate Interview Link and save to database
-  const handleCreateInterview = async (candidateName, candidateEmail, jobRole, passingScore, phase1Questions, phase2Questions, validityHours, durationLimit = 30, candidateType = 'experienced') => {
+  const handleCreateInterview = async (candidateName, candidateEmail, jobRole, passingScore, phase1Questions, phase2Questions, validityHours, durationLimit = 30, candidateType = 'experienced', scheduledStart = null, scheduledEnd = null) => {
     const newId = 'int-' + Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * validityHours).toISOString();
+    
+    // Convert to ISO/UTC
+    const startAt = scheduledStart ? new Date(scheduledStart).toISOString() : new Date().toISOString();
+    const expiresAt = scheduledEnd ? new Date(scheduledEnd).toISOString() : new Date(Date.now() + 1000 * 60 * 60 * validityHours).toISOString();
+    
     const passcode = Math.floor(100000 + Math.random() * 900000).toString();
     
     // Reconstruct proctored link here in frontend to pass to the backend
@@ -684,6 +688,7 @@ export default function App() {
       status: "Active",
       createdAt,
       expiresAt,
+      startAt,
       durationLimit: durationLimit || 30,
       passingScore: passingScore || 70,
       passcode,
@@ -2068,8 +2073,8 @@ function InteractiveHeroPanel() {
 // ----------------------------------------------------
 function HRAuthPage({ onLogin, onRegister }) {
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState('hr.admin@softstandard.com');
-  const [password, setPassword] = useState('securePass123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [registrationKey, setRegistrationKey] = useState('');
   const [showRegKey, setShowRegKey] = useState(false);
@@ -2350,7 +2355,7 @@ function SystemSettings({ hrToken }) {
   const [gmailStatus, setGmailStatus] = useState({ connected: false, email: '' });
   
   // Gmail SMTP fields (prefill with requested user email)
-  const [gmailEmail, setGmailEmail] = useState('hrms1928@gmail.com');
+  const [gmailEmail, setGmailEmail] = useState('');
   const [gmailPassword, setGmailPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
 
@@ -2696,6 +2701,31 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
   const validityOptions = [1, 2, 24, 30, 168];
   const durationOptions = [15, 30, 45, 60, 120];
 
+  const toLocalDatetimeString = (date) => {
+    const pad = (n) => n < 10 ? '0' + n : n;
+    return date.getFullYear() + '-'
+      + pad(date.getMonth() + 1) + '-'
+      + pad(date.getDate()) + 'T'
+      + pad(date.getHours()) + ':'
+      + pad(date.getMinutes());
+  };
+
+  const [scheduledStart, setScheduledStart] = useState(() => toLocalDatetimeString(new Date()));
+  const [scheduledEnd, setScheduledEnd] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7); // Default to 7 days
+    return toLocalDatetimeString(d);
+  });
+
+  // Sync scheduledEnd whenever validity or scheduledStart changes
+  useEffect(() => {
+    if (validity > 0) {
+      const startDate = new Date(scheduledStart);
+      const newEnd = new Date(startDate.getTime() + validity * 60 * 60 * 1000);
+      setScheduledEnd(toLocalDatetimeString(newEnd));
+    }
+  }, [validity, scheduledStart]);
+
   // Stats Counters
   const total = interviews.length;
   const completed = interviews.filter(i => i.status === 'Completed').length;
@@ -2863,7 +2893,9 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
         formatQuestionsForBackend(phase2Q), 
         validity,
         durationLimit,
-        candidateType
+        candidateType,
+        scheduledStart,
+        scheduledEnd
       );
       
       // Generate beautiful share link
@@ -3021,7 +3053,7 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
                         <tr>
                           <th>Candidate</th>
                           <th>Role</th>
-                          <th>Created / Expires</th>
+                          <th>Schedule / Expiry</th>
                           <th>Status</th>
                           <th>AI Evaluation</th>
                           <th className="text-right">Action</th>
@@ -3030,8 +3062,14 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
                       <tbody>
                         {interviews.map(int => {
                           const isLive = window.liveCandidateSession && window.liveCandidateSession.interviewId === int.id;
+                          const isNotStarted = int.startAt && new Date() < new Date(int.startAt) && int.status === 'Active';
                           const isExpired = new Date() > new Date(int.expiresAt) && int.status === 'Active';
-                          const statusStr = isExpired ? 'Expired' : int.status;
+                          let statusStr = int.status;
+                          if (isExpired) {
+                            statusStr = 'Expired';
+                          } else if (isNotStarted) {
+                            statusStr = 'Scheduled';
+                          }
 
                           return (
                             <tr key={int.id}>
@@ -3057,11 +3095,13 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
                                  </div>
                                </td>
                               <td className="font-mono text-xs text-slate-400">
-                                <div className="flex items-center gap-1.5 text-slate-500">
-                                  <Clock className="w-3.5 h-3.5" /> Created: {new Date(int.createdAt).toLocaleDateString()}
-                                </div>
+                                {int.startAt && (
+                                  <div className={`flex items-center gap-1.5 ${isNotStarted ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
+                                    <Clock className="w-3.5 h-3.5" /> Start: {new Date(int.startAt).toLocaleString()}
+                                  </div>
+                                )}
                                 <div className={`flex items-center gap-1.5 mt-1 font-bold ${isExpired ? 'text-rose-400' : 'text-slate-400'}`}>
-                                  <Clock className="w-3.5 h-3.5" /> Expiry: {new Date(int.expiresAt).toLocaleTimeString()}
+                                  <Clock className="w-3.5 h-3.5" /> Expiry: {new Date(int.expiresAt).toLocaleString()}
                                 </div>
                               </td>
                               <td>
@@ -3070,6 +3110,9 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
                                 )}
                                 {isLive && (
                                   <span className="badge badge-success bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 animate-pulse font-bold"><Activity className="w-3 h-3" /> LIVE</span>
+                                )}
+                                {statusStr === 'Scheduled' && (
+                                  <span className="badge bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold"><Clock className="w-3.5 h-3" /> Scheduled</span>
                                 )}
                                 {statusStr === 'Active' && !isLive && (
                                   <span className="badge bg-slate-500/10 border border-slate-500/20 text-slate-400"><Clock className="w-3 h-3" /> Active</span>
@@ -3264,43 +3307,58 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Invitation Window (Expiry Countdown)</label>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                          <select 
-                            className="glass-input"
-                            value={validityOptions.includes(validity) ? validity : 'custom'}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'custom') {
-                                setValidity(30); // default custom
-                              } else {
-                                setValidity(Number(val));
-                              }
-                            }}
-                            style={{ flexGrow: 1 }}
-                          >
-                            <option value={1}>1 Hour (Urgent Screen)</option>
-                            <option value={2}>2 Hours</option>
-                            <option value={24}>24 Hours</option>
-                            <option value={30}>30 Hours</option>
-                            <option value={168}>7 Days (Standard)</option>
-                            <option value="custom">Custom Duration (Hours)...</option>
-                          </select>
-                          
-                          {(!validityOptions.includes(validity) || validity === 30) && (
-                            <div className="animate-scale-in" style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '120px', flexShrink: 0 }}>
-                              <input 
-                                type="number" 
-                                min="1" 
-                                max="720"
-                                className="glass-input" 
-                                style={{ textAlign: 'center', padding: '10px 4px' }}
-                                value={validity}
-                                onChange={(e) => setValidity(Math.max(1, Number(e.target.value)))}
-                              />
-                              <span className="text-xs text-slate-400 font-bold font-mono">Hrs</span>
-                            </div>
-                          )}
+                        <label className="form-label">Invitation Window Preset</label>
+                        <select 
+                          className="glass-input"
+                          value={validityOptions.includes(validity) ? validity : 'custom'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'custom') {
+                              setValidity(-1); // Custom
+                            } else {
+                              setValidity(Number(val));
+                            }
+                          }}
+                        >
+                          <option value={1}>1 Hour (Urgent Screen)</option>
+                          <option value={2}>2 Hours</option>
+                          <option value={24}>24 Hours</option>
+                          <option value={30}>30 Hours</option>
+                          <option value={168}>7 Days (Standard)</option>
+                          <option value="custom">Custom/Scheduled DateTime...</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Assessment Start (Local Time)</label>
+                        <input 
+                          type="datetime-local" 
+                          className="glass-input" 
+                          value={scheduledStart}
+                          onChange={(e) => {
+                            setScheduledStart(e.target.value);
+                            if (validity > 0) {
+                              const startDate = new Date(e.target.value);
+                              const newEnd = new Date(startDate.getTime() + validity * 60 * 60 * 1000);
+                              setScheduledEnd(toLocalDatetimeString(newEnd));
+                            }
+                          }}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Assessment End / Expiry (Local Time)</label>
+                        <input 
+                          type="datetime-local" 
+                          className="glass-input" 
+                          value={scheduledEnd}
+                          onChange={(e) => {
+                            setScheduledEnd(e.target.value);
+                            setValidity(-1); // Switch to manual
+                          }}
+                          required
+                        />
+                        <div style={{ marginTop: '4px', fontSize: '0.65rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+                          Time Zone: <span style={{ color: '#22d3ee', fontWeight: 'bold' }}>{Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local'}</span> (stored as UTC)
                         </div>
                       </div>
                       <div className="form-group">
@@ -4898,14 +4956,36 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
     if (!candidateEmail && interview.candidateEmail) {
       setCandidateEmail(interview.candidateEmail);
     }
-    const isExpired = new Date() > new Date(interview.expiresAt);
+    
+    const now = new Date();
+    const isNotStarted = interview.startAt && now < new Date(interview.startAt);
+    const isExpired = interview.expiresAt && now > new Date(interview.expiresAt);
+
     if (isExpired) {
       onExpired();
+    } else if (isNotStarted) {
+      const startDate = new Date(interview.startAt);
+      setPasscodeError(`This interview has not started yet. It is scheduled to start at: ${startDate.toLocaleString()} (${startDate.toUTCString()})`);
+    } else {
+      setPasscodeError('');
     }
   }, [interview, onExpired, candidateName, candidateEmail]);
 
   const handleProceedToCalibration = async () => {
     setPasscodeError('');
+    const now = new Date();
+    const isNotStarted = interview?.startAt && now < new Date(interview.startAt);
+    const isExpired = interview?.expiresAt && now > new Date(interview.expiresAt);
+
+    if (isExpired) {
+      onExpired();
+      return;
+    }
+    if (isNotStarted) {
+      const startDate = new Date(interview.startAt);
+      setPasscodeError(`This interview has not started yet. It is scheduled to start at: ${startDate.toLocaleString()} (${startDate.toUTCString()})`);
+      return;
+    }
     if (!candidateName.trim()) {
       setPasscodeError('Please enter your full name.');
       return;
