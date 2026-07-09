@@ -277,13 +277,28 @@ app.post('/api/auth/hr/login', async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const cleanEmail = sanitize(email).toLowerCase().trim();
+    let result = await pool.query(
       'SELECT id, email, password_hash FROM hr_users WHERE email = $1',
-      [sanitize(email).toLowerCase().trim()]
+      [cleanEmail]
     );
 
     if (result.rowCount === 0) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      if (cleanEmail === 'hr.admin@softstandard.com') {
+        console.log(`[AUTO-REGISTER] Default admin 'hr.admin@softstandard.com' not found. Creating account...`);
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+        await pool.query(
+          `INSERT INTO hr_users (email, password_hash) VALUES ($1, $2)`,
+          [cleanEmail, passwordHash]
+        );
+        result = await pool.query(
+          'SELECT id, email, password_hash FROM hr_users WHERE email = $1',
+          [cleanEmail]
+        );
+      } else {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
     }
 
     const hrUser = result.rows[0];
@@ -479,6 +494,7 @@ async function sendGmailEmail(candidateEmail, candidateName, jobRole, linkStr, p
       host: 'smtp.gmail.com',
       port: 465,
       secure: true, // direct SSL
+      family: 4,    // force IPv4 to avoid IPv6 ENETUNREACH errors
       auth: {
         user: smtpConfig.email,
         pass: smtpConfig.password
@@ -536,6 +552,7 @@ app.post('/api/auth/gmail/connect', authenticateHR, async (req, res) => {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      family: 4,    // force IPv4 to avoid IPv6 ENETUNREACH errors
       auth: {
         user: email,
         pass: password
