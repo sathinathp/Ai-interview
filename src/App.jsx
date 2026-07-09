@@ -6490,6 +6490,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
   // Start question sequence
   const initiateQuestions = () => {
     stopAllSpeech();
+    phaseRef.current = 1; // Sync ref synchronously
     setInterviewStage('questioning');
     deliverQuestion(0);
   };
@@ -6519,7 +6520,8 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
     setCurrentQIdx(idx);
     setQuestionTimeLeft(120);
     
-    const questionObj = currentQuestionsList[idx];
+    const activeQuestionsList = phaseRef.current === 1 ? (interview.phase1Questions || []) : (interview.phase2Questions || []);
+    const questionObj = activeQuestionsList[idx];
     if (!questionObj) {
       setTranscribedText("");
       setTempSpeech("");
@@ -6798,7 +6800,8 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
       setPhase2Responses(updatedPhase2);
     }
 
-    if (currentQIdxRef.current + 1 < currentQuestionsList.length) {
+    const activeQuestionsList = phaseRef.current === 1 ? (interview.phase1Questions || []) : (interview.phase2Questions || []);
+    if (currentQIdxRef.current + 1 < activeQuestionsList.length) {
       deliverQuestion(currentQIdxRef.current + 1);
     } else {
       if (phaseRef.current === 1) {
@@ -6812,6 +6815,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
 
   const startPhase2 = () => {
     stopAllSpeech();
+    phaseRef.current = 2; // Sync ref synchronously to prevent stale closures
     setPhase(2);
     setCurrentQIdx(0);
     setInterviewStage('questioning');
