@@ -2670,7 +2670,7 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
           optionsText: q.options ? q.options.join(", ") : ""
         };
       }
-      const qTextLower = q.toLowerCase();
+      const qTextLower = String(q || '').toLowerCase();
       let determinedType = "speech";
       if (
         qTextLower.startsWith("write a") || 
@@ -6560,7 +6560,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
     if (isObj) {
       qType = questionObj.type || "speech";
     } else {
-      const qTextLower = qText.toLowerCase();
+      const qTextLower = String(qText || '').toLowerCase();
       if (
         (phaseRef.current === 2 && idx === 2) || // 3rd question in Phase 2
         qTextLower.startsWith("write a") ||
@@ -7019,7 +7019,8 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
 
     let nightShiftFine = "Yes";
     const nightShiftQIdx = (interview.phase1Questions || []).findIndex(q => {
-      const txt = (typeof q === 'object' && q !== null ? q.text : q).toLowerCase();
+      if (!q) return false;
+      const txt = String(typeof q === 'object' && q !== null ? (q.text || '') : q).toLowerCase();
       return txt.includes("night shift") || txt.includes("timezone");
     });
     const nightShiftAns = nightShiftQIdx !== -1 && phase1Answers[nightShiftQIdx] 
@@ -7669,7 +7670,7 @@ function CandidateInterview({ interview, onComplete, candidateToken }) {
                   if (isItemObj) {
                     qType = currentQuestionItem.type || "speech";
                   } else {
-                    const qTextLower = currentQuestionItem.toLowerCase();
+                    const qTextLower = String(currentQuestionItem || '').toLowerCase();
                     if (
                       (phase === 2 && currentQIdx === 2) || // 3rd question in Phase 2
                       qTextLower.startsWith("write a") || 
