@@ -10,14 +10,15 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const nodemailer = require('nodemailer');
 const http = require('http');
 const { WebSocketServer, WebSocket: WsClient } = require('ws');
-const { createClient } = require('@deepgram/sdk');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const { DeepgramClient } = require('@deepgram/sdk');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nexa_hire_secure_jwt_secret_key_2026_xyz';
 
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render's proxy headers for express-rate-limit
 const PORT = process.env.PORT || 5000;
 
 // ─── SECURITY HEADERS (Helmet) ─────────────────────────────────────────────
@@ -1213,7 +1214,7 @@ const wss = new WebSocketServer({ server: httpServer, path: '/transcribe' });
 
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || '';
 
-wss.on('connection', (clientSocket, req) => {
+wss.on('connection', async (clientSocket, req) => {
   const params = new URL(req.url, 'http://localhost').searchParams;
   const interviewId = params.get('id') || 'unknown';
   const token = params.get('token') || '';
@@ -1245,13 +1246,25 @@ wss.on('connection', (clientSocket, req) => {
   }
 
   // Open a connection from backend → Deepgram
-  const dgClient = createClient(DEEPGRAM_API_KEY);
+  const dgClient = new DeepgramClient(DEEPGRAM_API_KEY);
   let dgConnection = null;
   let isReady = false;
   const pendingChunks = [];
 
+  const sendAudioData = (liveConn, chunk) => {
+    try {
+      if (typeof liveConn.send === 'function') {
+        liveConn.send(chunk);
+      } else if (liveConn.socket && typeof liveConn.socket.send === 'function') {
+        liveConn.socket.send(chunk);
+      }
+    } catch (e) {
+      console.error(`[DEEPGRAM WS] Error sending chunk for ${interviewId}:`, e.message);
+    }
+  };
+
   try {
-    const live = dgClient.listen.live({
+    const live = await dgClient.listen.v1.connect({
       model: 'nova-3',           // Deepgram's most accurate real-time model (2024)
       language: 'en-US',
       smart_format: true,        // Auto-punctuation and capitalization
@@ -1270,41 +1283,39 @@ wss.on('connection', (clientSocket, req) => {
       console.log(`[DEEPGRAM WS] Deepgram connection open for: ${interviewId}`);
       isReady = true;
       // Flush any audio that arrived before connection was ready
-      pendingChunks.forEach(chunk => live.send(chunk));
+      pendingChunks.forEach(chunk => sendAudioData(live, chunk));
       pendingChunks.length = 0;
       clientSocket.send(JSON.stringify({ type: 'ready' }));
     });
 
-    live.on('Results', (data) => {
-      const alt = data?.channel?.alternatives?.[0];
-      if (!alt) return;
-      const transcript = alt.transcript?.trim();
-      if (!transcript) return;
+    live.on('message', (data) => {
+      if (data.type === 'Results') {
+        const alt = data?.channel?.alternatives?.[0];
+        if (!alt) return;
+        const transcript = alt.transcript?.trim();
+        if (!transcript) return;
 
-      const isFinal = data.is_final;
-      const confidence = alt.confidence || 0;
+        const isFinal = data.is_final;
+        const confidence = alt.confidence || 0;
 
-      // Forward transcript to browser client
-      if (clientSocket.readyState === WsClient.OPEN) {
-        clientSocket.send(JSON.stringify({
-          type: isFinal ? 'final' : 'interim',
-          transcript,
-          confidence: Math.round(confidence * 100),
-          words: alt.words || []
-        }));
-      }
-    });
-
-    live.on('UtteranceEnd', () => {
-      // Signals end of a natural speech utterance
-      if (clientSocket.readyState === WsClient.OPEN) {
-        clientSocket.send(JSON.stringify({ type: 'utterance_end' }));
-      }
-    });
-
-    live.on('SpeechStarted', () => {
-      if (clientSocket.readyState === WsClient.OPEN) {
-        clientSocket.send(JSON.stringify({ type: 'speech_started' }));
+        // Forward transcript to browser client
+        if (clientSocket.readyState === WsClient.OPEN) {
+          clientSocket.send(JSON.stringify({
+            type: isFinal ? 'final' : 'interim',
+            transcript,
+            confidence: Math.round(confidence * 100),
+            words: alt.words || []
+          }));
+        }
+      } else if (data.type === 'UtteranceEnd') {
+        // Signals end of a natural speech utterance
+        if (clientSocket.readyState === WsClient.OPEN) {
+          clientSocket.send(JSON.stringify({ type: 'utterance_end' }));
+        }
+      } else if (data.type === 'SpeechStarted') {
+        if (clientSocket.readyState === WsClient.OPEN) {
+          clientSocket.send(JSON.stringify({ type: 'speech_started' }));
+        }
       }
     });
 
@@ -1331,7 +1342,7 @@ wss.on('connection', (clientSocket, req) => {
     if (isBinary) {
       // Raw audio chunk from MediaRecorder
       if (isReady && dgConnection) {
-        try { dgConnection.send(data); } catch (e) {}
+        sendAudioData(dgConnection, data);
       } else {
         // Buffer until Deepgram is ready
         pendingChunks.push(data);
