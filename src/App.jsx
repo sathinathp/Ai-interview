@@ -13,12 +13,13 @@ import {
 
 // IndexedDB helper for storing and retrieving recorded videos
 // Dynamic Backend Configuration
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5000'
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.');
+const BACKEND_URL = isLocal
+  ? `http://${window.location.hostname}:5000`
   : 'https://ai-interview-9y9t.onrender.com';
 
-const WS_BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'ws://localhost:5000'
+const WS_BACKEND_URL = isLocal
+  ? `ws://${window.location.hostname}:5000`
   : 'wss://ai-interview-9y9t.onrender.com';
 
 const videoDb = {
@@ -499,6 +500,10 @@ export default function App() {
                 }
                 return [data, ...prev];
               });
+              // Auto-restore session to interview stage on refresh if active
+              if (data.status === 'In Progress' || data.status === 'Active') {
+                setCurrentRoute('candidate-interview');
+              }
             } else if (fullRes.status === 401 || fullRes.status === 403) {
               localStorage.removeItem('candidate_token');
               setCandidateToken('');
@@ -568,15 +573,13 @@ export default function App() {
     if (interviewObj) {
       setSelectedInterview(interviewObj);
       if (route === 'candidate-start' || route === 'candidate-interview') {
-        const pcode = passcodeVal || interviewObj.passcode || new URLSearchParams(window.location.search).get('passcode') || '';
-        window.history.pushState({}, '', `?interviewId=${interviewObj.id}${pcode ? `&passcode=${pcode}` : ''}`);
+        window.history.pushState({}, '', `?interviewId=${interviewObj.id}`);
       }
     } else if (paramId) {
       const selected = interviews.find(i => i.id === paramId);
       setSelectedInterview(selected);
       if (route === 'candidate-start' || route === 'candidate-interview') {
-        const pcode = passcodeVal || selected?.passcode || new URLSearchParams(window.location.search).get('passcode') || '';
-        window.history.pushState({}, '', `?interviewId=${paramId}${pcode ? `&passcode=${pcode}` : ''}`);
+        window.history.pushState({}, '', `?interviewId=${paramId}`);
       }
     } else {
       // Clean query params on home navigate
@@ -678,7 +681,7 @@ export default function App() {
     const protocol = window.location.protocol;
     const host = window.location.host;
     const pathname = window.location.pathname;
-    const invitationLink = `${protocol}//${host}${pathname}?interviewId=${newId}&passcode=${passcode}`;
+    const invitationLink = `${protocol}//${host}${pathname}?interviewId=${newId}`;
 
     const newInterview = {
       id: newId,
@@ -2902,7 +2905,7 @@ function HRDashboard({ interviews, onCreateInterview, onViewReport, onDeleteInte
       const protocol = window.location.protocol;
       const host = window.location.host;
       const pathname = window.location.pathname;
-      const linkStr = `${protocol}//${host}${pathname}?interviewId=${newInt.id}&passcode=${newInt.passcode}`;
+      const linkStr = `${protocol}//${host}${pathname}?interviewId=${newInt.id}`;
       
       setGeneratedLink(linkStr);
       setGeneratedPasscode(newInt.passcode);
@@ -4920,8 +4923,8 @@ function CandidateReportCard({ interview, onClose, isModal = false, hrToken }) {
 // 5. CANDIDATE START SCREEN / CAMERA CHECK
 // ----------------------------------------------------
 function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActivate, onGoToAuth, setCandidateToken }) {
-  const [candidateName, setCandidateName] = useState(() => interview?.candidateName || '');
-  const [candidateEmail, setCandidateEmail] = useState(() => interview?.candidateEmail || '');
+  const [candidateName, setCandidateName] = useState('');
+  const [candidateEmail, setCandidateEmail] = useState('');
   const [enteredPasscode, setEnteredPasscode] = useState('');
   const [passcodeError, setPasscodeError] = useState('');
   const [cameraStage, setCameraStage] = useState('welcome'); // welcome | camera-check
@@ -4938,24 +4941,9 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
     }
   }, []);
 
-  // Read passcode from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('passcode') || '';
-    if (code) {
-      setEnteredPasscode(code);
-    }
-  }, []);
-
-  // Check link validity on load and sync inputs
+  // Check link validity on load
   useEffect(() => {
     if (!interview) return;
-    if (!candidateName && interview.candidateName) {
-      setCandidateName(interview.candidateName);
-    }
-    if (!candidateEmail && interview.candidateEmail) {
-      setCandidateEmail(interview.candidateEmail);
-    }
     
     const now = new Date();
     const isNotStarted = interview.startAt && now < new Date(interview.startAt);
@@ -4997,6 +4985,20 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(candidateEmail.trim())) {
       setPasscodeError('Please enter a valid email address.');
+      return;
+    }
+    if (!enteredPasscode.trim()) {
+      setPasscodeError('Please enter your security passcode.');
+      return;
+    }
+
+    const normalizeString = (str) => str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+    if (interview?.candidateName && normalizeString(candidateName) !== normalizeString(interview.candidateName)) {
+      setPasscodeError('The entered name does not match the invitation details.');
+      return;
+    }
+    if (interview?.candidateEmail && normalizeString(candidateEmail) !== normalizeString(interview.candidateEmail)) {
+      setPasscodeError('The entered email address does not match the invitation details.');
       return;
     }
 
@@ -5116,7 +5118,8 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
     };
   }, []);
 
-  if (interview && (interview.status === 'Completed' || interview.status === 'Terminated')) {
+  const activeCandidateToken = localStorage.getItem('candidate_token');
+  if (interview && (interview.status === 'Completed' || interview.status === 'Terminated' || (interview.status === 'In Progress' && !activeCandidateToken))) {
     return (
       <div className="container py-16 flex-grow flex items-center justify-center">
         <div className="glass-card max-w-md text-center space-y-6">
@@ -5126,7 +5129,7 @@ function CandidateStart({ interview, onStartInterview, onExpired, onLockdownActi
           <div>
             <h2 className="text-white text-lg">Interview Session Closed</h2>
             <p className="text-slate-400 text-sm mt-2">
-              This screening invitation has already been completed or terminated. For security compliance, interview links are strictly single-use and cannot be accessed a second time.
+              This screening invitation has already been accessed, completed, or terminated. For security compliance, interview links are strictly single-use and cannot be accessed a second time.
             </p>
           </div>
           <div className="p-4 rounded-xl bg-slate-900/50 border border-white/5 space-y-2 text-left">

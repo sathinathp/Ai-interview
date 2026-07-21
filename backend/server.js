@@ -322,18 +322,20 @@ app.post('/api/auth/hr/login', async (req, res) => {
 
 // Candidate Login/Passcode Verification
 app.post('/api/auth/candidate/login', async (req, res) => {
-  const { interviewId, passcode } = req.body;
+  const { interviewId, passcode, candidateName, candidateEmail } = req.body;
 
-  if (!interviewId || !passcode) {
-    return res.status(400).json({ error: 'Interview ID/Email and passcode are required.' });
+  if (!interviewId || !passcode || !candidateName || !candidateEmail) {
+    return res.status(400).json({ error: 'Interview ID, passcode, candidate name, and email are required.' });
   }
 
   const cleanId = sanitize(interviewId).trim();
   const cleanPasscode = sanitize(passcode).trim();
+  const cleanName = sanitize(candidateName).trim().toLowerCase().replace(/\s+/g, ' ');
+  const cleanEmail = sanitize(candidateEmail).trim().toLowerCase();
 
   try {
     const result = await pool.query(
-      `SELECT id, candidate_email, passcode, status, start_at, expires_at FROM interviews 
+      `SELECT id, candidate_name, candidate_email, passcode, status, start_at, expires_at FROM interviews 
        WHERE id = $1 OR LOWER(candidate_email) = LOWER($2)`,
       [cleanId, cleanId]
     );
@@ -344,6 +346,16 @@ app.post('/api/auth/candidate/login', async (req, res) => {
 
     const interview = result.rows[0];
 
+    const dbEmail = interview.candidate_email ? interview.candidate_email.trim().toLowerCase() : '';
+    const dbName = interview.candidate_name ? interview.candidate_name.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+
+    if (dbEmail && cleanEmail !== dbEmail) {
+      return res.status(401).json({ error: 'The email address does not match the invitation.' });
+    }
+    if (dbName && cleanName !== dbName) {
+      return res.status(401).json({ error: 'The name does not match the invitation.' });
+    }
+
     const crypto = require('crypto');
     const submittedHash = crypto.createHash('sha256').update(cleanPasscode).digest('hex');
     const serverHash   = crypto.createHash('sha256').update(String(interview.passcode).trim()).digest('hex');
@@ -353,8 +365,8 @@ app.post('/api/auth/candidate/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid security passcode. Please verify your invitation details.' });
     }
 
-    if (interview.status === 'Completed' || interview.status === 'Terminated') {
-      return res.status(400).json({ error: 'This interview session has already been completed or terminated.' });
+    if (interview.status === 'Completed' || interview.status === 'Terminated' || interview.status === 'In Progress') {
+      return res.status(400).json({ error: 'This interview session has already been accessed, completed, or terminated. Single-use access only.' });
     }
 
     const now = new Date();
@@ -367,6 +379,9 @@ app.post('/api/auth/candidate/login', async (req, res) => {
     if (interview.expires_at && now > new Date(interview.expires_at)) {
       return res.status(400).json({ error: 'This interview session has expired.' });
     }
+
+    // Mark interview status as 'In Progress' upon successful candidate login to enforce single-use access
+    await pool.query("UPDATE interviews SET status = 'In Progress' WHERE id = $1", [interview.id]);
 
     const token = jwt.sign(
       { interviewId: interview.id, role: 'candidate' },
@@ -855,9 +870,12 @@ app.post('/api/evaluate', authenticateCandidate, evaluateLimiter, async (req, re
     result.grammarScore = grammarScore;
     result.emailScore = emailScore;
     
-    result.overallScore = Number((
-      (introScore + commScore + confScore + presentScore + vocabScore + grammarScore + emailScore) / 7
-    ).toFixed(1));
+    const overallScoreVal = Number(result.overallScore);
+    const overallScore = !isNaN(overallScoreVal) && overallScoreVal > 0 
+      ? Math.max(0, Math.min(100, overallScoreVal)) 
+      : Number(((introScore + commScore + confScore + presentScore + vocabScore + grammarScore + emailScore) / 7).toFixed(1));
+    
+    result.overallScore = overallScore;
     
     res.json(result);
   } catch (err) {
@@ -974,7 +992,7 @@ app.post('/api/interviews', authenticateHR, async (req, res) => {
     let finalLink = invitationLink;
     if (!finalLink) {
       const origin = req.headers.origin || 'http://localhost:5173';
-      finalLink = `${origin}/?interviewId=${id}&passcode=${passcode}`;
+      finalLink = `${origin}/?interviewId=${id}`;
     }
 
     // Try to send Gmail assessment invitation if configured
